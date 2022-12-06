@@ -1,0 +1,226 @@
+<head>
+<style>
+.citedby { color: #365899; cursor: pointer; }
+.displaynone { display: none; }
+.q1 { background-color: rgb(164, 207, 99); color: white; padding: 0 5px; }
+.q2 { background-color: rgb(232, 213, 89); color: white; padding: 0 5px; }
+.q3 { background-color: rgb(251, 163, 83); color: white; padding: 0 5px; }
+.q4 { background-color: rgb(221, 90, 78); color: white; padding: 0 5px; }
+</style>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+</head>
+<body style="background-color: #e6e6e6;">
+<div style="max-width: 960px; background-color: #fff; padding: 24 40px; margin: 48px auto 0px; font-size: 1.8em;">IL Cited Documents 2014-2019</div>
+<div style="text-align: center;"><svg width="900" height="900"></svg><br>Figure 1. Relationships between citing subject areas and cited authors*</div>
+<div style="text-align: center; margin: 15px 0 0;">* For documents published in 2014 or later.</div>
+<div class="detail" style="max-width: 960px; background-color: #fff; padding: 24 40px; margin: 15px auto 48px;">
+<script>
+var dataf = [];
+d3.text("ildocuments.csv", "text/plain", function(error, data) {
+	var lines = data.matchAll(/[^\n]+/g);
+	for(var line of lines) {
+		var ls = line[0].matchAll(/""|[^"]+/g);//""|[ &-),-;=?A-[\]a-zú–]+
+		var larray= [];
+		for(var l of ls) {
+			if(l[0] != ", ") {
+				if(l[0] == "\"\"") larray.push("");
+				else larray.push(l[0]);
+			}
+		}
+		dataf.push(larray);
+	}
+
+	var text = [],
+		forref = "",
+		ref = [];
+	var nest = d3.nest()
+		.key(function(d) { return d[1]; })
+		.key(function(d) { return d[3]; })
+		.entries(dataf)
+		.sort(function(a, b) { return a.key < b.key ? -1 : 1; });
+	nest.forEach(function(d, i) {
+		text.push(d.key);
+		forref+="<div style=\"text-align: right\">Close</div>";
+		d.values.forEach(function(e, j) {
+			forref+="<p>";
+			forref+=e.key;
+			forref+="</p>";
+		});
+		ref[i] = forref;
+		forref = "";
+	});
+	nest = d3.nest()
+		.key(function(d) { return d[2]; })
+		.entries(dataf)
+		.sort(function(a, b) { return a.key < b.key ? -1 : 1; });
+	nest.forEach(function(d) {
+		text.push(d.key);
+	});
+
+	var textnested = [];
+	d3.nest()
+		.key(function(d) { return d; })
+		.entries(text)
+		.forEach(function(d) {
+			textnested.push(d.key);
+		});
+	if(textnested.length < text.length) {
+		var inDirection = 1;
+		text = textnested;
+		text.sort(function(a, b) { return a < b ? -1 : 1; });
+	}
+
+	nest = d3.nest()
+		.key(function(d) { return d[0]; })
+		.entries(dataf);
+	if(nest.length < dataf.length) {
+		nest.forEach(function(d) {
+			d.values.forEach(function(e) { e.push(1/d.values.length); });
+		});
+	}
+
+	var matrix = [];
+	text.forEach(function(d, i) {
+		matrix[i] = d3.range(text.length).map(function() { return 0; });
+	});
+	dataf.forEach(function(d) {
+		var x = text.indexOf(d[1]),
+			y = text.indexOf(d[2]);
+		if(nest.length < dataf.length) matrix[x][y]+=d[d.length-1];
+		else matrix[x][y]++;
+		if(!inDirection) {
+			if(nest.length < dataf.length) matrix[y][x]+=d[d.length-1];
+			else matrix[y][x]++;
+		}
+	});
+	var chord = d3.layout.chord()
+		.padding(.04)
+		.matrix(matrix);
+	var svg = d3.select("svg")
+		.append("g")
+		.attr("transform", "translate(450, 450)");
+	var fill = d3.scale.category20();
+	var g = svg.selectAll(".group")
+		.data(chord.groups)
+		.enter()
+		.append("g")
+		.attr("class", "group");
+	var r = 300;
+	g.append("path")
+		.attr("d", d3.svg.arc().innerRadius(r).outerRadius(r+20))
+		.style("fill", function(d) { return fill(d.index); })
+		.on("mouseover", standOut(0.1, 0.1, ""));
+	g.append("text")
+		.attr("transform", function(d) {
+			return "rotate("+(((d.startAngle+d.endAngle)/2) * (180/Math.PI) - 90)+")"
+				+ "translate("+(r+38)+")" + (((d.startAngle+d.endAngle)/2) > Math.PI ? "rotate(180)" : "");
+		})
+		.attr("text-anchor", function(d) { return ((d.startAngle+d.endAngle)/2) > Math.PI ? "end" : ""; })
+		.text(function(d) { return text[d.index]; });
+	var lt = g.selectAll(".lt")
+		.data(function(d) {
+			var unitAngle = (d.endAngle-d.startAngle)/d.value;
+			return d3.range(d.value).map(function(step) { return { angle: d.startAngle+step*unitAngle }; });
+		})
+		.enter()
+		.append("g")
+		.attr("class", "lt")
+		.attr("transform", function(d) { return "rotate("+((d.angle*(180/Math.PI))-90)+")translate("+(r+20)+")"; });
+	lt.append("line")
+		.attr("x2", 6)
+		.attr("stroke", "#000");
+	lt.filter(function(d, i) { return i%5 == 0; }).append("text")
+		.text(function(d, i) { return i*5; })
+		.attr("transform", function(d) { return d.angle > Math.PI ? "translate(7, -3)rotate(180)" : "translate(7, 3)"; })
+		.attr("text-anchor", function(d) { return d.angle > Math.PI ? "end" : ""; });
+	d3.select("body").selectAll(".refhtml")
+		.data(chord.groups)
+		.enter()
+		.append("div")
+		.attr("class", "refhtml")
+		.html(function(d) { return ref[d.index]; })
+		.style("position", "absolute")
+		.style("top", 500)
+		.style("right", 100)
+		.style("left", 250)
+		.style("height", 500)
+		.style("overflow", "scroll")
+		.style("display", "none")
+		.on("click", standOut(0.75, 1, "none"));
+	svg.selectAll(".chord")
+		.data(chord.chords)
+		.enter()
+		.append("path")
+		.attr("class", "chord")
+		.attr("d", d3.svg.chord().radius(r))
+		.style("fill", function(d) { return fill(d.source.index); })
+		.style("stroke", function(d) { return d3.rgb(fill(d.source.index)).darker(); })
+		.style("opacity", 0.75);
+	function standOut(oc, oa, or) {
+		return function(d, i) {
+			var gstandout = [];
+			svg.selectAll(".chord")
+				.style("opacity", 0.75)
+				.each(function(e) { e.source.index == i ? gstandout.push(e.target.index) : e.target.index == i ? gstandout.push(e.source.index) : ""; })
+				.filter(function(e) { return e.source.index != i && e.target.index != i; })
+				.style("opacity", oc);
+			svg.selectAll(".group")
+				.style("opacity", 1)
+				.filter(function(e, j) { return gstandout.indexOf(j) == -1 && j != i; })
+				.style("opacity", oa);
+			d3.selectAll(".refhtml")
+				.style("display", "none")
+				.filter(function(e, j) { return j == i; })
+				.style("display", or);
+		};
+	}
+
+	var authorprev = "", idprev = "", citingrefs = "", numcited = 0, citingidprev = "";
+	var authorarray = [{ name: "Buaraphan", fullname: "Khajornsak Buaraphan" }, { name: "Chenprakhon", fullname: "Pirom Chenprakhon" }, { name: "Jittam", fullname: "Piyachat Jittam" }, { name: "Ketpichainarong", fullname: "Watcharee Ketpichainarong" }, { name: "Kitrungloadjanaporn", fullname: "Pongpatai Kitrungloadjanaporn" }, { name: "Laosinchai", fullname: "Parames Laosinchai" }, { name: "Nokkaew", fullname: "Artorn Nokkaew" }, { name: "Nopparatjamjomras, S.", fullname: "Suchai Nopparatjamjomras" }, { name: "Nopparatjamjomras, T.", fullname: "Thasaneeya Nopparatjamjomras" }, { name: "Panjaburee", fullname: "Patcharin Panjaburee" }, { name: "Precharattana", fullname: "Monamorn Precharattana" }, { name: "Sriwattanarothai", fullname: "Namkang Sriwattanarothai" }, { name: "Wongkia", fullname: "Wararat Wongkia" }, { name: "Yasri", fullname: "Pratchayapong Yasri" }, { name: "Yodyingyong", fullname: "Supan Yodyingyong" }];
+	var refdetail = "";
+	dataf.forEach(function(d) {
+		if(d[1]!=authorprev || d[0].substring(0,8)!=idprev || d[0].substring(8)!=citingidprev) {
+			if((d[1]!=authorprev || d[0].substring(0,8)!=idprev) && idprev!="") {
+				if(numcited > 0) refdetail += " <a class=\"citedby\">Cited by "+numcited+"</a>";
+				if(citingrefs!="") refdetail += "<div class=\"displaynone\" style=\"padding-left: 10px; padding-top: 10px;\">"+citingrefs+"</div>";
+				d3.select(".detail").append("div").style("padding-left", "10px").style("padding-bottom", "20px").html(refdetail);
+				citingrefs = ""; numcited = 0;
+			}
+			if(d[1]!=authorprev) {
+				d3.select(".detail").append("div").style("font-size", "1.5em").style("padding-bottom", "20px")
+					.text(function() {
+						var found = authorarray.find(element => element.name == d[1]);
+						if(found != undefined) return found.fullname;
+						else return d[1];
+					});
+			}
+			if(d[1]!=authorprev || d[0].substring(0,8)!=idprev) {
+				refdetail = d[3];
+				if(d[4]=="1") refdetail += "<span style=\"background-color: #505050; color: white; margin: 0 5px;\"> Web of Science </span>";
+				if(d[4]=="1" && (d[6] || (d[5]=="1"))) refdetail += "|";
+				if(d[5]=="1") refdetail += "<span style=\"color: #e9711c; margin: 0 5px;\">Scopus</span>";
+				if(d[6]) {
+					d[6] = d[6].replaceAll("(Q1)", "<span class=\"q1\">Q1</span>");
+					d[6] = d[6].replaceAll("(Q2)", "<span class=\"q2\">Q2</span>");
+					d[6] = d[6].replaceAll("(Q3)", "<span class=\"q3\">Q3</span>");
+					d[6] = d[6].replaceAll("(Q4)", "<span class=\"q4\">Q4</span>");
+					refdetail += "<span style=\"background-color: #D97147; color: white; margin: 0 5px;\"> SJR </span>"+(d[7]-1)+" "+d[6];
+				}
+				idprev = d[0].substring(0,8);
+			}
+			if(d[1]!=authorprev) authorprev = d[1];
+			if(d[8]!="") { citingrefs += d[8]+"<br><br>"; numcited++; }
+			citingidprev = d[0].substring(8);
+		}
+	});
+	if(numcited > 0) refdetail += " <a class=\"citedby\">Cited by "+numcited+"</a>";
+	refdetail += "<div class=\"displaynone\" style=\"padding-left: 10px; padding-top: 10px;\">"+citingrefs+"</div>";
+	d3.select(".detail").append("div").style("padding-left", "10px").style("padding-bottom", "20px").html(refdetail);
+	$(".citedby").click(function() {
+		$(this).next().toggleClass("displaynone");
+	});
+});
+</script>
+</div>
+</body>
